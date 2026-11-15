@@ -1,0 +1,104 @@
+from ucimlrepo import fetch_ucirepo
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score, recall_score
+from sklearn.dummy import DummyClassifier
+
+# 1. Load Cleveland heart disease dataset (id=45)
+heart_disease = fetch_ucirepo(id=45)
+X = heart_disease.data.features
+y = heart_disease.data.targets
+
+df = X.copy()
+df['num'] = y['num']
+
+# 2. Convert target column 'num' to binary: 0 (no disease) and 1 (any disease)
+df['target'] = df['num'].apply(lambda x: 0 if x == 0 else 1)
+df = df.drop(columns=['num'])
+
+# 3. Handle missing values in 'ca' and 'thal' columns using Mode
+df['ca'] = df['ca'].fillna(df['ca'].mode()[0])
+df['thal'] = df['thal'].fillna(df['thal'].mode()[0])
+
+X = df.drop(columns=['target'])
+y = df['target']
+
+# 4. Split data into training and test sets (80/20)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# Train the Logistic Regression model
+model = LogisticRegression(max_iter=1000)
+model.fit(X_train, y_train)
+y_pred = model.predict(X_test)
+
+# Baseline model comparing with the most common class
+baseline = DummyClassifier(strategy='most_frequent')
+baseline.fit(X_train, y_train)
+baseline_pred = baseline.predict(X_test)
+
+# 5. Report accuracy, recall, and list the most important measurements using coefficients
+print("--- Model Evaluation Results ---")
+print(f"Accuracy: {accuracy_score(y_test, y_pred):.2f}")
+print(f"Recall: {recall_score(y_test, y_pred):.2f}")
+print(f"Baseline Accuracy: {accuracy_score(y_test, baseline_pred):.2f}")
+
+coefficients = pd.DataFrame({
+    'Measurement': X.columns,
+    'Coefficient': model.coef_[0]
+})
+coefficients['Abs_Coefficient'] = np.abs(coefficients['Coefficient'])
+coefficients = coefficients.sort_values(by='Abs_Coefficient', ascending=False)
+
+print("\n--- Most Important Measurements ---")
+print(coefficients[['Measurement', 'Coefficient']].head(5))
+
+# 6. Nurse & Patient Risk Score Usage Workflow
+print("\n--- Nurse & Patient Risk Score Usage Workflow ---")
+
+def evaluate_patient_risk(patient_profile, user_role="nurse"):
+    """
+    Simulates how a nurse or patient uses the model's risk score
+    to provide an immediate risk assessment and clinical recommendation.
+    """
+    patient_df = pd.DataFrame([patient_profile], columns=X.columns)
+    
+    # Fill any missing inputs using training set modes
+    for col in patient_df.columns:
+        if patient_df[col].isna().any():
+            patient_df[col] = patient_df[col].fillna(X_train[col].mode()[0])
+            
+    # Calculate probability (Risk Score)
+    risk_prob = model.predict_proba(patient_df)[0][1]
+    risk_percentage = round(risk_prob * 100, 2)
+    
+    print(f"\n[User Role: {user_role.upper()}]")
+    print(f"-> Calculated Heart Disease Risk Score: {risk_percentage}%")
+    
+    # Clinical decision routing based on user role
+    if user_role.lower() == "nurse":
+        if risk_percentage >= 70:
+            print("-> Triage Action: High Risk. Transfer patient immediately to a cardiologist and perform an ECG.")
+        elif risk_percentage >= 30:
+            print("-> Triage Action: Moderate Risk. Schedule a follow-up appointment and monitor blood pressure.")
+        else:
+            print("-> Triage Action: Low Risk. Document in routine records and advise on healthy habits.")
+    else:
+        if risk_percentage >= 70:
+            print("-> Patient Advice: Please consult your doctor urgently for further diagnostic tests.")
+        else:
+            print("-> Patient Advice: Your results look safe. Keep maintaining a balanced diet and regular exercise.")
+
+# Test the workflow with a realistic patient profile
+real_person_sample = {
+    'age': 58.0, 'sex': 1.0, 'cp': 4.0, 'trestbps': 140.0, 
+    'chol': 268.0, 'fbs': 0.0, 'restecg': 2.0, 'thalach': 112.0, 
+    'exang': 1.0, 'oldpeak': 1.5, 'slope': 2.0, 'ca': 2.0, 'thal': 7.0
+}
+
+# Run Nurse Workflow
+evaluate_patient_risk(real_person_sample, user_role="nurse")
+
+# Run Patient Workflow
+evaluate_patient_risk(real_person_sample, user_role="patient")
