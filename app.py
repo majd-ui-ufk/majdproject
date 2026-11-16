@@ -581,4 +581,4 @@ def build_demo(M):
     return demo
 
 demo = build_demo(M)
-demo.launch(share=True, debug=True)
+demo.launch(server_name="0.0.0.0", server_port=int(os.environ.get("PORT", 7860)))
